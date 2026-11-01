@@ -1,0 +1,56 @@
+name: Build USB audio modules
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev
+      - name: Fetch pinned kernel source and GCC 4.9
+        run: |
+          git clone --depth 1 https://github.com/OkayFly/rk3288Kernel7.1.git kernel
+          cd kernel
+          test "$(git rev-parse HEAD)" = "bfe2fbacff18f40736bb7654e16f6b3f257276fb"
+          cp Module.symvers ../source.symvers
+          git clean -fdx
+          cd ..
+          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 toolchain
+      - name: Configure and compile modules
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p artifacts
+          export ARCH=arm
+          export CROSS_COMPILE="$GITHUB_WORKSPACE/toolchain/bin/arm-linux-androideabi-"
+          cd kernel
+          make mrproper
+          cp ../device.config .config
+          scripts/config --disable LOCALVERSION_AUTO --set-str LOCALVERSION "" --module SND_HWDEP --module SND_USB_AUDIO
+          make olddefconfig
+          make -j2 HOSTCFLAGS="-O2 -fcommon" modules_prepare
+          cp ../source.symvers Module.symvers
+          make -j2 HOSTCFLAGS="-O2 -fcommon" M=sound/core CONFIG_SND_HWDEP=m modules 2>&1 | tee ../artifacts/core-build.log
+          make -j2 HOSTCFLAGS="-O2 -fcommon" M=sound/usb modules 2>&1 | tee ../artifacts/usb-build.log
+          find sound/core sound/usb -name '*.ko' -exec cp {} ../artifacts/ \;
+          cp .config ../artifacts/build.config
+          cp include/generated/utsrelease.h ../artifacts/
+          "$CROSS_COMPILE"gcc --version > ../artifacts/compiler.txt
+          for module in ../artifacts/*.ko; do
+            "$CROSS_COMPILE"readelf -p .modinfo "$module"
+          done > ../artifacts/module-info.txt
+          cd ../artifacts
+          sha256sum *.ko > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rk3288-usb-audio
+          path: artifacts/
+          if-no-files-found: warn
