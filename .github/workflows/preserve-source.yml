@@ -1,0 +1,26 @@
+name: Preserve original upstream kernel
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/preserve-source.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  preserve:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Mirror original commit into independent archive branch
+        env:
+          TARGET: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          set -euxo pipefail
+          git clone --mirror https://github.com/OkayFly/rk3288Kernel7.1.git upstream.git
+          git -C upstream.git cat-file -e bfe2fbacff18f40736bb7654e16f6b3f257276fb^{commit}
+          AUTH="$(git config --get http.https://github.com/.extraheader)"
+          git -C upstream.git -c http.https://github.com/.extraheader="$AUTH" push "$TARGET" bfe2fbacff18f40736bb7654e16f6b3f257276fb:refs/heads/kernel-source-original
+          echo "Original kernel preserved at branch kernel-source-original, commit bfe2fbacff18f40736bb7654e16f6b3f257276fb" >> "$GITHUB_STEP_SUMMARY"
