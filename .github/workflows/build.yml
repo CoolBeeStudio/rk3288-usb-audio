@@ -22,7 +22,7 @@ jobs:
           cp Module.symvers ../source.symvers
           git clean -fdx
           cd ..
-          git clone --depth 1 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 toolchain
+          git clone --depth 1 --branch android-7.1.2_r39 https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 toolchain
       - name: Configure and compile modules
         shell: bash
         run: |
@@ -30,6 +30,8 @@ jobs:
           mkdir -p artifacts
           export ARCH=arm
           export CROSS_COMPILE="$GITHUB_WORKSPACE/toolchain/bin/arm-linux-androideabi-"
+          test -x "${CROSS_COMPILE}gcc"
+          "${CROSS_COMPILE}gcc" --version
           cd kernel
           make mrproper
           cp ../device.config .config
